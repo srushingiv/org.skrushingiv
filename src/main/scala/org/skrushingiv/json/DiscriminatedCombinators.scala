@@ -100,3 +100,36 @@ class DiscriminatedWrites[D, T : ClassTag](discriminatorPath:JsPath,
     }
   }
 }
+
+/**
+ * Will generate a Format object that uses a "discriminator value" at a specified JSON path to indicate which
+ * concrete sub-class in a type-hierarchy that serializers and de-serializers should use. The discriminator
+ * value can be of any format-able type. All concrete Formats in the provided options map should format
+ * subclasses of a common super-type.
+ * 
+ * For instance, given the type hyerarchy:
+ *     trait Foo { def discriminator:String }
+ *     case class Bar extends Foo { val discriminator = "bar" }
+ *     case class Baz extends Foo { val discriminator = "baz" }
+ * 
+ * We can create a generic Format[Foo[_]] with:
+ *     implicit val barFormat = Json.format[Bar]
+ *     implicit val bazFormat = Json.format[Baz]
+ *     implicit val fooFormat = DiscriminatedFormat(__ \ "discriminator", Map("bar" -> (classOf[Bar], barFormat), "baz" -> (classOf[Baz], bazFormat)))
+ * 
+ * This generic `Format[Foo[_]]` will write a `Bar` object as `{ "discriminator" : "bar" }` and
+ * will read `{ "discriminator" : "baz" }` as a `Baz` object.
+ * 
+ * An example of this type-hierarchy support can be seen in [ies.common.model.scheduledevent.DREventJSONConverters]
+ * 
+ * @param discriminatorPath The JsPath describing the location of the discriminator value.
+ * @param options A Map of discriminator values to Class and Formatters for concrete subclasses.
+ * @param dReads The reader to use for the discriminator value - Most-often will be something implicitly resolved like `Reads.stringReads`
+ * @param dWrites The writer to use for the discriminator value - Most-often will be something implicitly resolved like `Writes.stringWrites`
+ */
+class DiscriminatedFormat[D, T : ClassTag](discriminatorPath:JsPath, options:(D, (Class[SubT], Format[SubT]) forSome {type SubT <: T}) *)
+    (implicit dReads:Reads[D], dWrites:Writes[D]) extends WrappedFormat[T] {
+  protected val r = new DiscriminatedReads[D, T](discriminatorPath, options.map(x => (x._1, x._2._2)):_*)
+  protected val w = new DiscriminatedWrites[D, T](discriminatorPath, options:_*)
+}
+

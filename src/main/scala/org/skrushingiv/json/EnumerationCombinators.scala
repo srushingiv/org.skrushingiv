@@ -27,3 +27,11 @@ class EnumerationReads[E <: Enumeration](enum: E) extends Reads[E#Value] {
 class EnumerationWrites[E <: Enumeration] extends Writes[E#Value] {
   def writes(value:E#Value):JsValue = JsString(value.toString)
 }
+
+/**
+ * An EnumerationFormat object reads and writes enumeration values using their string representation.
+ */
+class EnumerationFormat[E <: Enumeration](enum: E) extends WrappedFormat[E#Value] {
+  protected val r = new EnumerationReads(enum)
+  protected val w = new EnumerationWrites[E]
+}
