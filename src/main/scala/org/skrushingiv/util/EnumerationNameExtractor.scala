@@ -35,11 +35,11 @@ trait EnumerationNameExtractor { self : Enumeration =>
   /**
    * Extractor for case-match comprehensions against strings.
    */
-  def unapply(name:String): Option[self.Value] = Try(withName(name)).toOption
+  def unapply(name:String): Option[self.Value] = Option(name) flatMap (n => Try(withName(n)).toOption)
 
   /**
    * Extractor for case-match comprehensions against values.
    */
-  def unapply(t:self.Value): Option[String] = Some(t.toString)
+  def unapply(t:self.Value): Option[String] = Option(t) map (_.toString)
 
 }

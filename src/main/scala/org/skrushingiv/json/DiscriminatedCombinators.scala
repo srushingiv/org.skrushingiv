@@ -4,6 +4,7 @@ import play.api.libs.json._
 import play.api.libs.functional.syntax._
 import play.api.data.validation.ValidationError
 import scala.reflect.ClassTag
+import scala.language.existentials
 
 /**
  * A DiscriminatedReads object uses a "discriminator value" at a specified JSON path to determine which

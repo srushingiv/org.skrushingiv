@@ -1,10 +1,7 @@
 package org.skrushingiv
 
 import play.api.libs.json._
-import play.api.libs.functional.syntax._
-import play.api.data.validation.ValidationError
 import scala.collection.MapLike
-import scala.reflect.ClassTag
 
 package object json {
 
@@ -30,7 +27,10 @@ package object json {
      * @param evidence Compiler-provided evidence that the parameter class `A` is a `Map`, or `null`.
      * @param r A `Reads` for the collection type.
      */
-    def readNullableWhenEmpty[A <: Iterable[_]](implicit r: Reads[A], evidence: A <:< MapLike[_,_,_] = null) = Reads[A] { json =>
+    def readNullableWhenEmpty[A <: Traversable[_]](implicit r: Reads[A], evidence: A <:< MapLike[_,_,_] = null) =
+      lazyReadNullableWhenEmpty(r)(evidence)
+
+    def lazyReadNullableWhenEmpty[A <: Traversable[_]](r: => Reads[A])(implicit evidence: A <:< MapLike[_,_,_] = null) = Reads[A] { json =>
       path.applyTillLast(json).fold(
         error => error,
         result => result.fold(
@@ -50,7 +50,10 @@ package object json {
      * 
      * @param w A `Writes` for the collection type.
      */
-    def writeNullableWhenEmpty[A <: Iterable[_]](implicit w: Writes[A]) = OWrites[A] { a =>
+    def writeNullableWhenEmpty[A <: Traversable[_]](implicit w: Writes[A]) =
+      lazyWriteNullableWhenEmpty(w)
+
+    def lazyWriteNullableWhenEmpty[A <: Traversable[_]](w: => Writes[A]) = OWrites[A] { a =>
       if (a.isEmpty) Json.obj()
       else JsPath.createObj((path, w.writes(a)))
     }
@@ -63,7 +66,7 @@ package object json {
      * @param r A `Reads` for the collection type.
      * @param w A `Writes` for the collection type.
      */
-    def formatNullableWhenEmpty[A <: Iterable[_]](implicit r: Reads[A], w: Writes[A], evidence: A <:< MapLike[_,_,_] = null): OFormat[A] =
+    def formatNullableWhenEmpty[A <: Traversable[_]](implicit r: Reads[A], w: Writes[A], evidence: A <:< MapLike[_,_,_] = null): OFormat[A] =
       OFormat[A](readNullableWhenEmpty[A], writeNullableWhenEmpty[A])
 
   }
