@@ -1,8 +1,6 @@
 package org.skrushingiv.json
 
 import play.api.libs.json._
-import play.api.libs.functional.syntax._
-import play.api.data.validation.ValidationError
 import scala.reflect.ClassTag
 import scala.language.existentials
 
@@ -23,8 +21,6 @@ import scala.language.existentials
  * 
  * This generic `Reads[Foo[_]]` will read `{ "discriminator" : "bar" }` as a `Bar` object.
  * 
- * An example of this type-hierarchy support can be seen in [ies.common.model.scheduledevent.DREventJSONConverters]
- * 
  * @param discriminatorPath The JsPath describing the location of the discriminator value.
  * @param options A collection of discriminator values and matching Reads for concrete subclasses.
  * @param dFormat The Reads to use for the discriminator value - Most-often will be something implicitly resolved like `Reads.stringReads`
@@ -43,12 +39,13 @@ class DiscriminatedReads[D, T](discriminatorPath:JsPath,
   private val dpReads = discriminatorPath.readNullable(dReads)
 
   def reads(json: JsValue): JsResult[T] = {
-    dpReads.reads(json).get match {
-      case None | Some(_:JsUndefined) =>
-        JsError(discriminatorPath, ValidationError("Discriminator value missing."))
-      case Some(d) if options.get(d).isEmpty =>
-        JsError(discriminatorPath, ValidationError("Discriminator value does not match any expected value."))
-      case Some(d) => options(d).reads(json)
+    dpReads.reads(json) match {
+      case e:JsError => e
+      case JsSuccess(None | Some(_:JsUndefined), path) =>
+        JsError(path, "Discriminator value missing.")
+      case JsSuccess(Some(d),path) if options.get(d).isEmpty =>
+        JsError(path, "Discriminator value does not match any expected value.")
+      case JsSuccess(Some(d),_) => options(d).reads(json)
     }
   }
 }
@@ -60,18 +57,16 @@ class DiscriminatedReads[D, T](discriminatorPath:JsPath,
  * super-type.
  * 
  * For instance, given the type hyerarchy:
- *     trait Foo { def discriminator:String }
- *     case class Bar extends Foo { val discriminator = "bar" }
- *     case class Baz extends Foo { val discriminator = "baz" }
+ *     trait Foo
+ *     case class Bar extends Foo
+ *     case class Baz extends Foo
  * 
- * We can create a generic Writes[Foo[_]] with:
+ * We can create a generic Writes[Foo] with:
  *     implicit val barWrites = Json.writes[Bar]
  *     implicit val bazWrites = Json.writes[Baz]
- *     implicit val fooWrites = new DiscriminatedWrites(__ \ "discriminator", Map("bar" -> (classOf[Bar], barWrites), "baz" -> (classOf[Baz], bazWrites)))
+ *     implicit val fooWrites = new DiscriminatedWrites[String,Foo](__ \ "discriminator", Map("bar" -> classOf[Bar], "baz" -> classOf[Baz]))
  * 
- * This generic `Writes[Foo[_]]` will write a `Bar` object as `{ "discriminator" : "bar" }`.
- * 
- * An example of this type-hierarchy support can be seen in [ies.common.model.scheduledevent.DREventJSONConverters]
+ * This generic `Writes[Foo]` will write a `Bar` object as `{ "discriminator" : "bar" }`.
  * 
  * @param discriminatorPath The JsPath describing the location of the discriminator value.
  * @param options A Map of discriminator values to Class and Writes for concrete subclasses.
@@ -84,6 +79,7 @@ class DiscriminatedWrites[D, T : ClassTag](discriminatorPath:JsPath,
 
   private val ct:ClassTag[T] = implicitly // So we can output meaningful error messages
 
+  // writes discriminator values at the specified discriminator path
   private val dpWrites = discriminatorPath.write(dWrites)
 
   // generate a map of runtime classes to writers that output both the sub-class JSON and the discriminator.
@@ -92,12 +88,9 @@ class DiscriminatedWrites[D, T : ClassTag](discriminatorPath:JsPath,
   }
 
   def writes(value: T): JsValue = {
-    val vc = value.getClass
-    map.collectFirst { case (c,w) if c.isAssignableFrom(vc) => w } match {
-      case Some(writer) =>
-        writer.writes(value)
-      case None =>
-        throw new NoSuchElementException("No Writes available for "+vc.getName+" as a discriminated sub-class of "+ct.runtimeClass.getName)
+    val vc = value.getClass // this is the runtime sub-class of T - the class of the concrete value. 
+    map.collectFirst { case (c,w) if c.isAssignableFrom(vc) => w } map (_.writes(value)) getOrElse {
+      throw new NoSuchElementException("No Writes available for "+vc.getName+" as a discriminated sub-class of "+ct.runtimeClass.getName)
     }
   }
 }
@@ -109,19 +102,17 @@ class DiscriminatedWrites[D, T : ClassTag](discriminatorPath:JsPath,
  * subclasses of a common super-type.
  * 
  * For instance, given the type hyerarchy:
- *     trait Foo { def discriminator:String }
- *     case class Bar extends Foo { val discriminator = "bar" }
- *     case class Baz extends Foo { val discriminator = "baz" }
+ *     trait Foo
+ *     case class Bar extends Foo
+ *     case class Baz extends Foo
  * 
- * We can create a generic Format[Foo[_]] with:
+ * We can create a generic Format[Foo] with:
  *     implicit val barFormat = Json.format[Bar]
  *     implicit val bazFormat = Json.format[Baz]
- *     implicit val fooFormat = DiscriminatedFormat(__ \ "discriminator", Map("bar" -> (classOf[Bar], barFormat), "baz" -> (classOf[Baz], bazFormat)))
+ *     implicit val fooFormat = DiscriminatedFormat(__ \ "discriminator", Map("bar" -> classOf[Bar], "baz" -> classOf[Baz]))
  * 
- * This generic `Format[Foo[_]]` will write a `Bar` object as `{ "discriminator" : "bar" }` and
+ * This generic `Format[Foo]` will write a `Bar` object as `{ "discriminator" : "bar" }` and
  * will read `{ "discriminator" : "baz" }` as a `Baz` object.
- * 
- * An example of this type-hierarchy support can be seen in [ies.common.model.scheduledevent.DREventJSONConverters]
  * 
  * @param discriminatorPath The JsPath describing the location of the discriminator value.
  * @param options A Map of discriminator values to Class and Formatters for concrete subclasses.

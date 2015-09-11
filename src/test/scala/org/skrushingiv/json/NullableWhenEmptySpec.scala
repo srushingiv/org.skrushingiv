@@ -6,7 +6,7 @@ import play.api.libs.json._
 import play.api.libs.functional.syntax._
 import scala.util.Try
 
-class NullableWhenEmptySpec extends Specification {
+class NullableWhenEmptySpec extends Specification with ConditionalSkipping {
 
   case class Test(foo:String, bar:List[Int] = List.empty, baz:List[Test] = List.empty)
 
@@ -207,8 +207,5 @@ class NullableWhenEmptySpec extends Specification {
       result === mapTest
     }
   }
-
-  def skipIf[R](shouldSkip:Boolean)(body: => R)(implicit evidence: AsResult[R]) =
-    if (shouldSkip) skipped else evidence.asResult(body)
 }
 

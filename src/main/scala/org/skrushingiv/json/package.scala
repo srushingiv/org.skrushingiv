@@ -2,6 +2,7 @@ package org.skrushingiv
 
 import play.api.libs.json._
 import scala.collection.MapLike
+import scala.language.implicitConversions
 
 package object json {
 
@@ -71,4 +72,14 @@ package object json {
 
   }
 
+  /**
+   * Implicit conversion for simpler-reading code when instantiating DiscriminatedWrites
+   */
+  implicit def wrapClassWrites[A](clazz:Class[A])(implicit w: Writes[A]): (Class[A], Writes[A]) = (clazz, w)
+
+  /**
+   * Implicit conversion for simpler-reading code when instantiating DiscriminatedFormat
+   */
+  implicit def wrapClassFormat[A](clazz:Class[A])(implicit f:Format[A] = null, r: Reads[A], w: Writes[A]): (Class[A], Format[A]) =
+    if (f != null) (clazz, f) else (clazz, Format(r, w))
 }

@@ -1,9 +1,8 @@
 package org.skrushingiv.json
 
 import play.api.libs.json._
-import play.api.libs.functional.syntax._
-import play.api.data.validation.ValidationError
-import scala.util.{Try, Success}
+import scala.util.Try
+import org.skrushingiv.util.TryUtils
 
 /**
  * An EnumerationReads object attempts to transform a JSON String into an Enumerated value
@@ -11,21 +10,23 @@ import scala.util.{Try, Success}
  * be found in the enumeration.
  */
 class EnumerationReads[E <: Enumeration](enum: E) extends Reads[E#Value] {
-  def reads(json:JsValue): JsResult[E#Value] = Reads.StringReads.reads(json).flatMap { s =>
-    Try(enum.withName(s)) match {
-      case Success(e) => JsSuccess(e)
-      case _ =>
-        val values = enum.values.map(_.toString).mkString("\"","\", \"","\"")
-        JsError("Expected one of "+values+" but encountered \""+s+"\".")
-    }
+  private def error(s:String,fail:Throwable) = {
+    val values = enum.values.map(_.toString).mkString("\"","\", \"","\"")
+    JsError("Expected one of ["+values+"] but encountered \""+s+"\".")
   }
+
+  private def string2value(s:String) = Try(enum.withName(s)).fold( JsSuccess(_), error(s,_))
+
+  def reads(json:JsValue): JsResult[E#Value] =
+    if (json == JsNull) JsSuccess(null) // handle null values without errors
+    else Reads.StringReads reads json flatMap string2value // handle non-null values
 }
 
 /**
  * An EnumerationWrites object writes enumeration values using their string representation.
  */
 class EnumerationWrites[E <: Enumeration] extends Writes[E#Value] {
-  def writes(value:E#Value):JsValue = JsString(value.toString)
+  def writes(value:E#Value):JsValue = if (value == null) JsNull else JsString(value.toString)
 }
 
 /**
