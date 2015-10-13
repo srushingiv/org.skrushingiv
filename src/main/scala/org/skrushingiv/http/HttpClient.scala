@@ -8,7 +8,8 @@ import play.api.Application
 /**
  * Sends HTTP requests to a server.
  * 
- * This trait's purpose is to 
+ * This trait's purpose is to simplify the calling of Play's webservices (WS) api. It is meant to be
+ * mixin that can be added to any proxy service implementation.
  */
 trait HttpClient {
 
@@ -69,7 +70,7 @@ trait HttpClient {
 
 
   /**
-   * Transforms the request holder before executing. Use this to apply AuthSchemes or signatures.
+   * Transforms the request before executing. Use this to apply AuthSchemes or signatures.
    * The default implementation simply passes the argument through.
    */
   protected def prepare(req: WSRequest): WSRequest = req

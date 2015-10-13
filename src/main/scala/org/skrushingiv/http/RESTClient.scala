@@ -45,6 +45,27 @@ case class RESTException(msg:String, response:WSResponse) extends RuntimeExcepti
  * This trait simplifies interaction with REST endpoints by providing the behavior necessary to
  * interact with any endpoint in a consistent way, and by providing a simple means of defining
  * endpoints and their collections.
+ * 
+ * Intended usage in RESTClient definitions:
+ * 
+ *     case class MyRESTClient extends RESTClient {
+ *       val rootUrl = ...
+ *       
+ *       val endpoint = CRUDEndpoint("collection")
+ *       val more_endpoints ...
+ *     }
+ * 
+ * Intended usage in consuming services:
+ * 
+ *     def insertNewItem(something:MyClass): Future[Unit] {
+ *       myRESTClient.endpoint.create(something)
+ *       // generates a POST request to <baseUrl>/collection
+ *     }
+ * 
+ *     def doSomethingWithFoo(myId:UUID,fooId:Int): Future[Unit] {
+ *       myRESTClient.endpoint / myId / "foo" / fooId > "do-something"
+ *       // generates a GET request to <baseUrl>/collection/<myId>/foo/do-something
+ *     }
  */
 
 trait RESTClient extends HttpClient { self =>
@@ -55,7 +76,8 @@ trait RESTClient extends HttpClient { self =>
   protected def mkUrl(pathComponents:Any*) = pathComponents.map(_.toString) mkString "/"
 
   protected class RESTItem(id:Any, path: Any*) {
-    def apply(subCollection:String) = new RESTCollection(subCollection, path :+ id)
+    def apply(subCollection:String) = /(subCollection)
+    def /(subCollection:String) = new RESTCollection(subCollection, path :+ id)
 
     def read[A](params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, r:Reads[A], ec:ExecutionContext) =
       get(mkUrl(path :+ id), params, headers).asOpt[A]
@@ -66,12 +88,14 @@ trait RESTClient extends HttpClient { self =>
     def delete(params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, ec:ExecutionContext) =
       self.delete(mkUrl(path :+ id), params, headers) map (_ => ())
 
-    def action(params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, ec:ExecutionContext) =
-      get(mkUrl(path :+ id), params, headers) map (_ => ())
+    def >(name:String)(implicit app:Application, ec:ExecutionContext) = action(name)
+    def action(name:String, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, ec:ExecutionContext) =
+      get(mkUrl(path :+ id :+ name), params, headers) map (_ => ())
   }
 
   protected class RESTCollection(name:String, path: Any*) {
-    def apply(id:Any) = new RESTItem(id, path :+ name)
+    def apply(id:Any) = /(id)
+    def /(id:Any) = new RESTItem(id, path :+ name)
 
     def list[A](params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, r:Reads[A], ec:ExecutionContext) =
       get(mkUrl(path :+ name), params, headers).asList[A]
