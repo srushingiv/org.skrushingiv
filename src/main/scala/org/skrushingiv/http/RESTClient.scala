@@ -7,7 +7,6 @@ import play.api.libs.ws.WSResponse
 import play.api.libs.json.{Reads,Writes}
 import play.api.Application
 
-
 case class RESTException(msg:String, response:WSResponse) extends RuntimeException(msg)
 
 /**
@@ -71,47 +70,105 @@ case class RESTException(msg:String, response:WSResponse) extends RuntimeExcepti
 trait RESTClient extends HttpClient { self =>
 
   /**
-   * This is a convenience method for constructing a REST endpoint url factory.
+   * This method constructs a REST endpoint url from path components.
    */
   protected def mkUrl(pathComponents:Seq[Any]) = pathComponents.map(_.toString) mkString "/"
 
-  protected class RESTItem(id:Any, path: Any*) {
-    def apply(subCollection:String) = /(subCollection)
-    def /(subCollection:String) = new RESTCollection(subCollection, path :+ id :_*)
+  protected class RESTElement(path: Seq[Any]) {
+    /**
+     * Creates a REST collection endpoint for the specified sub-collection name.
+     */
+    def /(subCollection:String) = new RESTCollection(path :+ subCollection)
 
+    /**
+     * Nullary variant of `read` to allow for more succinct syntax when no headers or query parameters are necessary
+     */
     def read[A](implicit app: Application, r:Reads[A], ec:ExecutionContext):Future[Option[A]] = read[A]()(app,r,ec)
+
+    /**
+     * Reads a REST Element
+     */
     def read[A](params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, r:Reads[A], ec:ExecutionContext) =
-      get(mkUrl(path :+ id), params, headers).asOpt[A]
+      get(mkUrl(path), params, headers).asOpt[A]
 
+    /**
+     * Allows infix assignment-style syntax for putting updates to REST elements.
+     * 
+     * For example:
+     *     myEndpoint / myId := newValue
+     */
     def :=[A](value:A)(implicit app: Application, w:Writes[A], ec:ExecutionContext) = update(value)
+    
+    /**
+     * Updates an existing REST element with a new value.
+     */
     def update[A](value:A, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, w:Writes[A], ec:ExecutionContext) =
-      put(mkUrl(path :+ id), w.writes(value), params, headers) map (_ => ())
+      put(mkUrl(path), w.writes(value), params, headers) map (_ => ())
 
-    def delete(implicit app: Application, ec:ExecutionContext): Future[Unit] = delete()(app,ec)
+    /**
+     * Deletes a REST element from a collection.
+     */
     def delete(params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, ec:ExecutionContext) =
-      self.delete(mkUrl(path :+ id), params, headers) map (_ => ())
+      self.delete(mkUrl(path), params, headers) map (_ => ())
 
+    /**
+     * Allows infix operator-style syntax for performing actions on REST elements.
+     * 
+     * For example:
+     *     myEndpoint / myId > "doSomething"
+     */
     def >(name:String)(implicit app:Application, ec:ExecutionContext) = action(name)
+    
+    /**
+     * Performs a REST element action.
+     */
     def action(name:String, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, ec:ExecutionContext) =
-      get(mkUrl(path :+ id :+ name), params, headers) map (_ => ())
+      get(mkUrl(path :+ name), params, headers) map (_ => ())
   }
 
-  protected class RESTCollection(name:String, path: Any*) {
-    def apply(id:Any) = /(id)
-    def /(id:Any) = new RESTItem(id, path :+ name :_*)
+  protected class RESTCollection(path: Seq[Any]) {
+    /**
+     * Creates a REST element endpoint for the specified id.
+     */
+    def /(id:Any) = new RESTElement(path :+ id)
 
+    /**
+     * Nullary variant of `list` to allow for more succinct syntax when no headers or query parameters are necessary
+     */
     def list[A](implicit app: Application, r:Reads[A], ec:ExecutionContext):Future[List[A]] = list[A]()(app,r,ec)
+
+    /**
+     * Gets a list of element members of the REST collection
+     */
     def list[A](params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, r:Reads[A], ec:ExecutionContext) =
-      get(mkUrl(path :+ name), params, headers).asList[A]
+      get(mkUrl(path), params, headers).asList[A]
 
+    /**
+     * Allows infix addition-style syntax for creating elements in REST collections.
+     * 
+     * For example:
+     *     myEndpoint / myId / "subCollection" + newValue
+     */
     def +[A](value:A)(implicit app: Application, w:Writes[A], ec:ExecutionContext) = create(value)
-    def create[A](value:A, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, w:Writes[A], ec:ExecutionContext) =
-      post(mkUrl(path :+ name), w.writes(value), params, headers) map (_ => ())
 
+    /**
+     * Posts a new element members to the REST collection
+     */
+    def create[A](value:A, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, w:Writes[A], ec:ExecutionContext) =
+      post(mkUrl(path), w.writes(value), params, headers) map (_ => ())
+
+    /**
+     * Allows infix subtraction-style syntax for deleting elements from REST collections.
+     * 
+     * For example:
+     *     myEndpoint / myId / "subCollection" - mySubId
+     */
     def -(id:Any)(implicit app: Application, ec:ExecutionContext) = /(id).delete()
   }
 
-  // convenience initializer method which should be used to create CRUD Endpoints.
-  final def CRUDEndpoint(path:String) = new RESTCollection(path)
+  /**
+   * Creates CRUD Endpoints.
+   */
+  final def CRUDEndpoint(path:String) = new RESTCollection(Seq(path))
 
 }
