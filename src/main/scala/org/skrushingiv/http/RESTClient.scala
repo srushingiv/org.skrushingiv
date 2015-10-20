@@ -73,18 +73,21 @@ trait RESTClient extends HttpClient { self =>
   /**
    * This is a convenience method for constructing a REST endpoint url factory.
    */
-  protected def mkUrl(pathComponents:Any*) = pathComponents.map(_.toString) mkString "/"
+  protected def mkUrl(pathComponents:Seq[Any]) = pathComponents.map(_.toString) mkString "/"
 
   protected class RESTItem(id:Any, path: Any*) {
     def apply(subCollection:String) = /(subCollection)
-    def /(subCollection:String) = new RESTCollection(subCollection, path :+ id)
+    def /(subCollection:String) = new RESTCollection(subCollection, path :+ id :_*)
 
+    def read[A](implicit app: Application, r:Reads[A], ec:ExecutionContext):Future[Option[A]] = read[A]()(app,r,ec)
     def read[A](params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, r:Reads[A], ec:ExecutionContext) =
       get(mkUrl(path :+ id), params, headers).asOpt[A]
 
+    def :=[A](value:A)(implicit app: Application, w:Writes[A], ec:ExecutionContext) = update(value)
     def update[A](value:A, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, w:Writes[A], ec:ExecutionContext) =
       put(mkUrl(path :+ id), w.writes(value), params, headers) map (_ => ())
 
+    def delete(implicit app: Application, ec:ExecutionContext): Future[Unit] = delete()(app,ec)
     def delete(params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, ec:ExecutionContext) =
       self.delete(mkUrl(path :+ id), params, headers) map (_ => ())
 
@@ -95,13 +98,17 @@ trait RESTClient extends HttpClient { self =>
 
   protected class RESTCollection(name:String, path: Any*) {
     def apply(id:Any) = /(id)
-    def /(id:Any) = new RESTItem(id, path :+ name)
+    def /(id:Any) = new RESTItem(id, path :+ name :_*)
 
+    def list[A](implicit app: Application, r:Reads[A], ec:ExecutionContext):Future[List[A]] = list[A]()(app,r,ec)
     def list[A](params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, r:Reads[A], ec:ExecutionContext) =
       get(mkUrl(path :+ name), params, headers).asList[A]
 
+    def +[A](value:A)(implicit app: Application, w:Writes[A], ec:ExecutionContext) = create(value)
     def create[A](value:A, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, w:Writes[A], ec:ExecutionContext) =
       post(mkUrl(path :+ name), w.writes(value), params, headers) map (_ => ())
+
+    def -(id:Any)(implicit app: Application, ec:ExecutionContext) = /(id).delete()
   }
 
   // convenience initializer method which should be used to create CRUD Endpoints.
