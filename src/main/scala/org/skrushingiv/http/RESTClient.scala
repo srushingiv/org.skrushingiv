@@ -6,6 +6,7 @@ import play.api.http.Writeable
 import play.api.libs.ws.WSResponse
 import play.api.libs.json.{Reads,Writes}
 import play.api.Application
+import scala.language.postfixOps
 
 case class RESTException(msg:String, response:WSResponse) extends RuntimeException(msg)
 
@@ -68,17 +69,20 @@ case class RESTException(msg:String, response:WSResponse) extends RuntimeExcepti
  */
 
 trait RESTClient extends HttpClient { self =>
+  import RESTClient.handleResponse
 
   /**
    * This method constructs a REST endpoint url from path components.
    */
   protected def mkUrl(pathComponents:Seq[Any]) = pathComponents.map(_.toString) mkString "/"
 
-  protected class RESTElement(path: Seq[Any]) {
+  class RESTElement(path: Seq[Any]) {
     /**
      * Creates a REST collection endpoint for the specified sub-collection name.
      */
-    def /(subCollection:String) = new RESTCollection(path :+ subCollection)
+    def /(subCollection:String) =
+      // This odd syntax should allow implementations to override the RESTCollection class
+      new self.RESTCollection(path :+ subCollection)
 
     /**
      * Nullary variant of `read` to allow for more succinct syntax when no headers or query parameters are necessary
@@ -89,7 +93,7 @@ trait RESTClient extends HttpClient { self =>
      * Reads a REST Element
      */
     def read[A](params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, r:Reads[A], ec:ExecutionContext) =
-      get(mkUrl(path), params, headers).asOpt[A]
+      get(mkUrl(path), params, headers) map handleResponse(_.json.asOpt[A])
 
     /**
      * Allows infix assignment-style syntax for putting updates to REST elements.
@@ -103,13 +107,13 @@ trait RESTClient extends HttpClient { self =>
      * Updates an existing REST element with a new value.
      */
     def update[A](value:A, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, w:Writes[A], ec:ExecutionContext) =
-      put(mkUrl(path), w.writes(value), params, headers) map (_ => ())
+      put(mkUrl(path), w.writes(value), params, headers) map handleResponse(_=>())
 
     /**
      * Deletes a REST element from a collection.
      */
     def delete(params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, ec:ExecutionContext) =
-      self.delete(mkUrl(path), params, headers) map (_ => ())
+      self.delete(mkUrl(path), params, headers) map handleResponse(_=>())
 
     /**
      * Allows infix operator-style syntax for performing actions on REST elements.
@@ -123,14 +127,16 @@ trait RESTClient extends HttpClient { self =>
      * Performs a REST element action.
      */
     def action(name:String, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, ec:ExecutionContext) =
-      get(mkUrl(path :+ name), params, headers) map (_ => ())
+      get(mkUrl(path :+ name), params, headers) map handleResponse(_=>())
   }
 
-  protected class RESTCollection(path: Seq[Any]) {
+  class RESTCollection(path: Seq[Any]) {
     /**
      * Creates a REST element endpoint for the specified id.
      */
-    def /(id:Any) = new RESTElement(path :+ id)
+    def /(id:Any) =
+      // This odd syntax should allow implementations to override the RESTElement class
+      new self.RESTElement(path :+ id)
 
     /**
      * Nullary variant of `list` to allow for more succinct syntax when no headers or query parameters are necessary
@@ -141,7 +147,9 @@ trait RESTClient extends HttpClient { self =>
      * Gets a list of element members of the REST collection
      */
     def list[A](params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, r:Reads[A], ec:ExecutionContext) =
-      get(mkUrl(path), params, headers).asList[A]
+      get(mkUrl(path), params, headers) map handleResponse {
+        _.json.asOpt[List[A]](Reads.list(r)) getOrElse List.empty
+      }
 
     /**
      * Allows infix addition-style syntax for creating elements in REST collections.
@@ -155,7 +163,7 @@ trait RESTClient extends HttpClient { self =>
      * Posts a new element members to the REST collection
      */
     def create[A](value:A, params: PSeq = Seq.empty, headers: PSeq = Seq.empty)(implicit app: Application, w:Writes[A], ec:ExecutionContext) =
-      post(mkUrl(path), w.writes(value), params, headers) map (_ => ())
+      post(mkUrl(path), w.writes(value), params, headers) map handleResponse(_=>())
 
     /**
      * Allows infix subtraction-style syntax for deleting elements from REST collections.
@@ -163,12 +171,25 @@ trait RESTClient extends HttpClient { self =>
      * For example:
      *     myEndpoint / myId / "subCollection" - mySubId
      */
-    def -(id:Any)(implicit app: Application, ec:ExecutionContext) = /(id).delete()
+    def -(id:Any)(implicit app: Application, ec:ExecutionContext) = /(id).delete();
   }
 
   /**
    * Creates CRUD Endpoints.
    */
-  final def CRUDEndpoint(path:String) = new RESTCollection(Seq(path))
+  final def CRUDEndpoint(path:String) = new self.RESTCollection(Seq(path))
 
 }
+
+object RESTClient {
+  def apply(baseUrl: => String) = new RESTClient {
+    def rootUrl = baseUrl
+  }
+  
+  protected def handleResponse[A](f:WSResponse => A): WSResponse => A = { response =>
+    if (response.status >= 200 && response.status < 300) f(response)
+    else throw RESTException(s"${response.statusText} (${response.status})", response)
+  }
+
+}
+

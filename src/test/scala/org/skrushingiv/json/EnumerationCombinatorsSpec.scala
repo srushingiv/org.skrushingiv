@@ -1,5 +1,6 @@
 package org.skrushingiv.json
 
+import org.skrushingiv.test._
 import org.specs2.mutable._
 import play.api.libs.json._
 import scala.util.Try

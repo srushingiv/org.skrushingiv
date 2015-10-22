@@ -1,5 +1,6 @@
 package org.skrushingiv.json
 
+import org.skrushingiv.test._
 import org.specs2.mutable._
 import org.specs2.execute.AsResult
 import play.api.libs.json._

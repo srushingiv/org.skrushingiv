@@ -1,4 +1,4 @@
-package org.skrushingiv.json
+package org.skrushingiv.test
 
 import org.specs2.mutable.Specification
 import org.specs2.execute.AsResult
