@@ -3,83 +3,111 @@ package org.skrushingiv.http
 import org.specs2.mutable._
 import org.specs2.specification.Scope
 import play.api.libs.json._
-import play.api.libs.ws._
+import play.api.libs.ws.{ WSRequest, WSResponse }
 import play.api.Application
-import scala.util.Try
+import scala.util.{Try, Success, Failure}
 import scala.concurrent._
 import scala.concurrent.duration.Duration
 
+import org.skrushingiv.util._
 import org.skrushingiv.test._
 
+import scala.language.reflectiveCalls
+import scala.language.implicitConversions
+
 class RESTClientSpec extends Specification with StrictMocking {
-  
+  import ExecutionContext.Implicits.global
+
   // we just need an implicit pointer in scope. it shouldn't actually get called during testing.
   implicit val app:Application = strictMock[Application]
+  implicit val stringReads = Reads.StringReads
 
-  // TODO: add tests here
+  case class Foo(a:String,b:Int)
+  implicit val fooFormat = Json.format[Foo]
+  val fooList = List(Foo("bar",123), Foo("bar",456))
+
+  "RESTClient" should {
+    "generate a valid url for list and parse a list return value" in new Fixture {
+      override val handler: Handler = { r => url = r.url; method = r.method; Success(WS.Response(fooList)) }
+      val r = foo.list[Foo] get ;
+      url === "http://test.com:9000/foo"
+      method === "GET"
+      r === fooList
+    }
+    "generate a valid url for create" in new Fixture {
+      foo += "Something!" get ;
+      url === s"http://test.com:9000/foo"
+      method === "POST"
+    }
+    "generate a valid url for read and parse a single return value" in new Fixture {
+      override val handler: Handler = { r => url = r.url; method = r.method; Success(WS.Response(fooList(0))) }
+      val r = (foo / id).read[Foo] get ;
+      url === s"http://test.com:9000/foo/${id}"
+      method === "GET"
+      r === Some(fooList(0))
+    }
+    "generate a valid url for update" in new Fixture {
+      foo / id := "SomethingNew!" get ;
+      url === s"http://test.com:9000/foo/${id}"
+      method === "PUT"
+    }
+    "generate a valid url for delete" in new Fixture {
+      foo -= id get ;
+      url === s"http://test.com:9000/foo/${id}"
+      method === "DELETE"
+    }
+    "generate a valid url for action" in new Fixture {
+      foo / id > "baz" get ;
+      url === s"http://test.com:9000/foo/${id}/baz"
+      method === "GET"
+    }
+    "generate a valid url for deep list and parse a list return value" in new Fixture {
+      override val handler: Handler = { r => url = r.url; method = r.method; Success(WS.Response(List(123,456))) }
+      val r = (foo / 123 / "bar").list[Int] get ;
+      method === "GET"
+      url === s"http://test.com:9000/foo/123/bar"
+      r === List(123,456)
+    }
+    "generate a valid url for deep create" in new Fixture {
+      foo / 123 / "bar" += "Something!" get ;
+      url === s"http://test.com:9000/foo/123/bar"
+      method === "POST"
+    }
+    "generate a valid url for deep read and parse a single return value" in new Fixture {
+      override val handler: Handler = { r => url = r.url; method = r.method; Success(WS.Response("\"plugh\"")) }
+      val r = (foo / 123 / "bar" / id).read[String] get ;
+      url === s"http://test.com:9000/foo/123/bar/${id}"
+      method === "GET"
+      r === Some("plugh")
+    }
+    "generate a valid url for deep update" in new Fixture {
+      foo / 123 / "bar" / id := "SomethingNew!" get ;
+      url === s"http://test.com:9000/foo/123/bar/${id}"
+      method === "PUT"
+    }
+    "generate a valid url for deep delete" in new Fixture {
+      foo / 123 / "bar" -= id get ;
+      url === s"http://test.com:9000/foo/123/bar/${id}"
+      method === "DELETE"
+    }
+    "generate a valid url for deep action" in new Fixture {
+      foo / 123 / "bar" / id > "baz" get ;
+      url === s"http://test.com:9000/foo/123/bar/${id}/baz"
+      method === "GET"
+    }
+  }
 
   trait Fixture extends Scope {
-    def response:Option[WSResponse] = None
-    val myClient = new RESTClient {
-      override protected def createRequest(url:String)(implicit app:Application) = MyRequest(url)
-      override protected def prepare(req: WSRequest): WSRequest = {
-        req.asInstanceOf[MyRequest].copy(returns = response)
-      }
-    }    
+    type Handler = WSRequest => Try[WSResponse]
+    val id = math.random
+    var url = ""
+    var method = ""
+    val handler: Handler = { r => url = r.url; method = r.method; Success(WS.Response("")) }
+    val test = new RESTClient {
+      val rootUrl = "http://test.com:9000"
+      override protected def createRequest(url:String)(implicit app:Application) = WS.mockRequest(url, handler)
+    }
+    val foo = test.CRUDEndpoint("foo")
   }
 
-  case class MyRequest(
-      url: String,
-      method: String = "GET",
-      body: WSBody = EmptyBody,
-      headers: Map[String, Seq[String]] = Map.empty,
-      queryString: Map[String, Seq[String]] = Map.empty,
-      calc: Option[WSSignatureCalculator] = None,
-      auth: Option[(String, String, WSAuthScheme)] = None,
-      followRedirects: Option[Boolean] = None,
-      requestTimeout: Option[Int] = None,
-      virtualHost: Option[String] = None,
-      proxyServer: Option[WSProxyServer] = None,
-      returns: Option[WSResponse] = None
-  ) extends WSRequest {
-    def sign(calc: WSSignatureCalculator) = copy(calc = Some(calc))
-    def withAuth(username: String, password: String, scheme: WSAuthScheme) = copy(auth = Some((username,password,scheme)))
-    def withHeaders(hdrs: (String, String)*) = {
-      val newHdrs = hdrs.groupBy(_._1).map {
-        case (k,v) => (k, headers.getOrElse(k, Seq.empty) ++ v.map(_._2))
-      }
-      copy(headers = headers ++ newHdrs)
-    }
-    def withQueryString(parameters: (String, String)*) = {
-      val newParams = parameters.groupBy(_._1).map {
-        case (k,v) => (k, queryString.getOrElse(k, Seq.empty) ++ v.map(_._2))
-      }
-      copy(queryString = queryString ++ newParams)
-    }
-    def withFollowRedirects(follow: Boolean) = copy(followRedirects = Some(follow))
-    def withRequestTimeout(timeout: Duration) = copy(requestTimeout = Some(timeout.toMillis.toInt))
-    def withVirtualHost(vh: String) = copy(virtualHost = Some(vh))
-    def withProxyServer(proxyServer: WSProxyServer) = copy(proxyServer = Some(proxyServer))
-    def withBody(body: WSBody) = copy(body = body)
-    def withMethod(method: String) = copy(method = method)
-    def execute(): Future[WSResponse] = {
-      returns.map(Future.successful(_)) getOrElse Future.failed(new RuntimeException(""))
-    }
-    def stream() = ???
-  }
-
-  case class MyResponse(
-      status: Int,
-      statusText: String,
-      body: String = "",
-      allHeaders: Map[String, Seq[String]] = Map.empty,
-      cookies: Seq[WSCookie] = Seq.empty
-  ) extends WSResponse {
-    def underlying[T]: T = ???
-    def header(key: String) = allHeaders.get(key).flatMap(_.headOption)
-    def cookie(name: String) = cookies.filter(_.name.map(_ == name) getOrElse false).headOption
-    def xml = ???
-    def json: JsValue = Json.parse(body)
-    def bodyAsBytes = ???
-  }
 }

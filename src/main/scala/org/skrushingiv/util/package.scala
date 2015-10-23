@@ -1,6 +1,7 @@
 package org.skrushingiv
 
 import scala.util.{Try, Success, Failure}
+import scala.concurrent._
 
 package object util {
 
@@ -52,6 +53,13 @@ package object util {
       case Success(a) => s(a)
     }
 
+  }
+
+  implicit class FutureUtils[A](val self: Future[A]) extends AnyVal {
+
+    def get:A = Await.ready(self, duration.Duration.Inf).value.get.get
+
+    def get(atMost:duration.Duration) = Await.ready(self, atMost).value.get.get
   }
 
 }
