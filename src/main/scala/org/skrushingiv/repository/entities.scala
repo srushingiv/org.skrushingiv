@@ -1,8 +1,5 @@
 package org.skrushingiv.repository
 
-import shapeless.tag
-import scala.util.{Try, Success}
-
 /**
  * The base trait for all entities.
  * 
@@ -13,12 +10,11 @@ import scala.util.{Try, Success}
  * The entity itself may not include the actual ID, as it may not yet
  * have been persisted or prepared for persisting.
  */
-trait Entity extends Product with Serializable {
-  // extending `Product` and `Serializable` encourages the use of `case class`
+trait Entity {
 
   /**
    * The type that IDs must conform to in order to be paired with this Entity class.
    */
   type Id
-}
 
+}

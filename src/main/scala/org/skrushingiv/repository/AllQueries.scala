@@ -4,7 +4,7 @@ trait AllQueriesFromInternal { self: Repository =>
 
   protected val allQuery: InternalQuery
 
-  def findAll = find(allQuery)
+  def findAll = find(allQuery, None, None)
 
   def removeAll = remove(allQuery)
 

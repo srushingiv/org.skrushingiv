@@ -1,6 +1,7 @@
 package org.skrushingiv
 package repository
 
+import query._
 import shapeless.tag
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
@@ -9,7 +10,7 @@ import scala.language.implicitConversions
  * The basic Repository knows how to find, count, insert, update and delete domain
  * entities from persistent storage.
  */
-trait BaseRepository { self: Repository =>
+sealed trait BaseRepository { self: Repository =>
   import Repository._
 
   // -------- abstract functionality which implementations must provide --------
@@ -27,6 +28,10 @@ trait BaseRepository { self: Repository =>
   /**
    * A domain query type that implementations of this repository will know how to
    * internalize.
+   * 
+   * The intent, here, is that implementations of this pattern will define domain-specific
+   * Algebraic Data Types (ADTs, sealed traits implemented by several case classes)
+   * in order to support varied, complex, and/or composable queries.
    */
   type Query
 
@@ -64,7 +69,7 @@ trait BaseRepository { self: Repository =>
    * Use Iterator in order to avoid excessive memory consumption on large result
    * sets.
    */
-  protected def find(query: InternalQuery): Future[Iterator[SavableEntity]]
+  protected def find(query: InternalQuery, page: Option[Pagination], sort: Option[Sortable]): Future[Iterator[SavableEntity]]
 
   /**
    * Removes matching objects from persistent storage.
@@ -106,7 +111,10 @@ trait Repository extends BaseRepository {
   /**
    * Finds objects in storage that match the domain query's criteria
    */
-  def findBy(q: Query) = find(q)
+  def findBy(q: Query) = q match {
+    case PageableQuery(page, sort) => find(q, Some(page), sort)
+    case _ => find(q, None, None)
+  }
 
   /**
    * Finds the first object in storage that matches the domain query's criteria
@@ -142,6 +150,8 @@ object Repository {
    * space. For example, in Mongo, all object IDs are unique, and therefore
    * any Entity Repository that uses the Mongo object IDs as the primary key
    * can use the same instance of an IdGenerator.
+   * 
+   * @tparam T The raw ID type.
    */
   trait IdGenerator[T] {
 
@@ -149,6 +159,11 @@ object Repository {
 
     def validate(rawId: T): T = rawId
 
+  }
+
+  object passthroughIdGenerator extends IdGenerator[Any] {
+    override def create: Any = ???
+    override def validate(rawId: Any): Any = rawId
   }
 
   /**
